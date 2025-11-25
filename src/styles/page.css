@@ -1,0 +1,16 @@
+.content {
+  height: 100vh;
+  width: 100%;
+  overflow: auto;
+  background-color: #1b1d24 !important;
+}
+
+.page-wrapper {
+  width: 95%;
+  margin: 0 auto;
+  overflow: hidden;
+}
+
+body {
+  overflow: hidden;
+}
