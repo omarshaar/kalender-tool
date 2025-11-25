@@ -1,0 +1,122 @@
+[
+    {
+        "id": "hWJCCqSnutMYPKM",
+        "name": "Veranstalltung1",
+        "title": "First Title",
+        "type": "event",
+        "targetEventId": "",
+        "period": {
+            "from": {
+                "date": "2025-05-15",
+                "time": "13:29"
+            },
+            "to": {
+                "date": "2025-05-15",
+                "time": "13:29"
+            }
+        },
+        "breaks": [],
+        "attributs": {
+            "isFullDay": false,
+            "overlapping": false,
+            "begleiter": false,
+            "teilnehmer": false
+        }
+    },
+    {
+        "id": "Md6ZCa1ETuVnrDc",
+        "name": "Programm 1",
+        "title": "Title",
+        "type": "programm",
+        "targetEventId": "hWJCCqSnutMYPKM",
+        "period": {
+            "from": {
+                "date": "2025-05-15",
+                "time": "00:28"
+            },
+            "to": {
+                "date": "2025-05-15",
+                "time": "06:28"
+            }
+        },
+        "breaks": [],
+        "attributs": {
+            "isFullDay": false,
+            "overlapping": false,
+            "begleiter": true,
+            "teilnehmer": true
+        }
+    },
+    {
+        "id": "F25H4zkhiapcF5h",
+        "name": "omar",
+        "title": "shaar",
+        "type": "programm",
+        "targetEventId": "hWJCCqSnutMYPKM",
+        "period": {
+            "from": {
+                "date": "2025-05-15",
+                "time": "07:00"
+            },
+            "to": {
+                "date": "2025-05-15",
+                "time": "13:00"
+            }
+        },
+        "breaks": [],
+        "attributs": {
+            "isFullDay": false,
+            "overlapping": false,
+            "begleiter": false,
+            "teilnehmer": true
+        }
+    },
+    {
+        "id": "KWiffQ8t0fkgk0H",
+        "name": "2 Veranstaltung 2",
+        "title": "",
+        "type": "event",
+        "targetEventId": "",
+        "period": {
+            "from": {
+                "date": "2025-05-14",
+                "time": "01:50"
+            },
+            "to": {
+                "date": "2025-05-14",
+                "time": "06:50"
+            }
+        },
+        "breaks": [],
+        "attributs": {
+            "isFullDay": false,
+            "overlapping": false,
+            "begleiter": false,
+            "teilnehmer": false
+        }
+    },
+    {
+        "id": "pfEtEcgKJVjWNC7",
+        "name": "to event 2",
+        "title": "",
+        "type": "programm",
+        "targetEventId": "KWiffQ8t0fkgk0H",
+        "period": {
+            "from": {
+                "date": "2025-05-14",
+                "time": "00:30"
+            },
+            "to": {
+                "date": "2025-05-14",
+                "time": "13:00"
+            }
+        },
+        "breaks": [],
+        "attributs": {
+            "isFullDay": false,
+            "overlapping": false,
+            "begleiter": true,
+            "teilnehmer": false
+        }
+    }
+]
