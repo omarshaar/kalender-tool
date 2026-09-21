@@ -1,5 +1,14 @@
+/**
+ * @file Small anchored popover ("speech bubble" style) used for the header's settings
+ * menu. Renders nothing while closed, and closes itself on an outside click.
+ */
+
 import { Box, ClickAwayListener } from "@mui/material";
 
+/**
+ * @param {boolean} props.open - Whether the menu is visible.
+ * @param {(open: boolean) => void} props.setOpen - Setter used to close the menu (on outside click).
+ */
 export function DropMenu(props) {
     const {open, setOpen} = props;
 

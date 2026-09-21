@@ -1,4 +1,21 @@
-import { use, useContext, useEffect, useRef, useState } from "react";
+/**
+ * @file Period view of the calendar ("period-layout"): a free-length, user-chosen date
+ * range (not necessarily a calendar week) rendered as one hourly-grid column per day.
+ *
+ * This is the only layout that also supports:
+ * - creating a new "Programmpunkt" (programm) by dragging directly on the grid
+ *   (`createEventOnSwipe` / `handleStartCreateonSwipe`), which opens the add-event
+ *   dialog once the drag ends (`handleEndCreateonSwipe`);
+ * - hiding days with no events (`state.hiddenEmptyDays`);
+ * - focusing the range around one shared event via a `?vid=` URL param
+ *   (`state.displayOnEventTimeRange`/`state.targetDisplayEventID`).
+ *
+ * As in the day layout, "Veranstaltung" (event) items are shown in a header strip
+ * (`renderVeranstaltungen`/`createVeranstaltungChips`) while "Programmpunkt" (programm)
+ * items sit on the hourly grid (`createEventsChips`).
+ */
+
+import { useContext, useEffect, useRef, useState } from "react";
 import { MainContext } from "../context";
 import { adjustDates, calculateDateDifference, calculateTimeDifferenceInHours, changeDateByDays, convertMinutesToTime, filterByDate, filterEventsBetweenDates, filterEventsByEventId, generateDateRange, generateDateRangeWithoutEmptys, getDayNameAndMonthDay, getTodayDate } from "../ultis/dates";
 import { MonthEventChip, MyButton, MyInput } from "../components";
@@ -26,7 +43,6 @@ export default function CalenderPerodLayout(props) {
     const gPNEventsContainerPeriodLayout   = useRef(null);
     const gCalenderbodyperiodlayoutWrapper = useRef(null);
     let gDateRange            = undefined;
-    let gShowPeriodEmptyDays  = undefined;
     const boundHandlers       = useRef({move: null, end: null}).current;
     const initCoords          = {x: 0, y: 0};
     let initMovedEventData    = null;
@@ -34,7 +50,6 @@ export default function CalenderPerodLayout(props) {
     let minuteInterval        = 10;
     const moveOverIndex       = useRef(null);
     let initMoveColumnIndex   = null;
-    let initPNColumnIndex     = null;
     let initPNPeriod          = {};
     let intOnSwipeClients     = {x: null, y: null};
     let eventOnSwipeCreated   = false;
@@ -54,6 +69,7 @@ export default function CalenderPerodLayout(props) {
       }));
     }, [DateRange]);
   
+    /** Resolves the visible date range (hidden-empty-days / event-focus / plain range) and rebuilds the header, grid and "Veranstaltung" strip. */
     function createPeroidLayout() {
       const selecteEventID = new URLSearchParams(location.search).get('vid');
       const isEventTimeRange = state.displayOnEventTimeRange;
@@ -83,6 +99,7 @@ export default function CalenderPerodLayout(props) {
       renderVeranstaltungen();
     }
 
+    /** Builds the header cells (one per visible day), showing the month name too when the range spans more than one month. */
     function cerateLayoutHeader() {
       const firstmMonth = parseInt(gDateRange[0]?.split("-")[1]);
       const lastMonth = parseInt(gDateRange[gDateRange.length - 1]?.split("-")[1]);
@@ -97,11 +114,13 @@ export default function CalenderPerodLayout(props) {
       ));
     }
 
+    /** Re-derives `eventList` (saved events + drafts) from the shared events store. */
     function getTargetEvents() {
       const eventsList = [...eventsState.eventsList, ...eventsState.newEvents];
       setEventList(eventsList);
     }
 
+    /** Builds one hourly-grid column per visible day, each hosting that day's event chips. */
     function createLayoutBody() {
       const newLayoutBody = gDateRange.map((date, index) => (
         <div
@@ -117,6 +136,7 @@ export default function CalenderPerodLayout(props) {
       return newLayoutBody;
     }
   
+    /** Arms the "create by dragging" listeners for a mousedown on a day column. */
     function createEventOnSwipe(ev, pIndex) {
       initMoveColumnIndex = pIndex;
   
@@ -129,6 +149,11 @@ export default function CalenderPerodLayout(props) {
       intOnSwipeClients.y = ev.clientY;
     }
 
+    /**
+     * Once the drag exceeds a small threshold, creates a new draft "Programmpunkt"
+     * (30 min, staged in `eventsState.newEvents` with `attributs.isNewEvent`), then
+     * keeps stretching its end time as the drag continues.
+     */
     function handleStartCreateonSwipe(pIndex, event) {
       const currentX = event.clientX;
       const currentY = event.clientY;
@@ -183,6 +208,7 @@ export default function CalenderPerodLayout(props) {
       }
     }
 
+    /** Recomputes the draft event's end date/time from how far the drag has moved (including across day columns). */
     function handleMoveSwipEvent(pEvent) {
       let currentY = pEvent.clientY;
       let diffInDay = (moveOverIndex.current - initMoveColumnIndex) * (60*24);
@@ -199,6 +225,7 @@ export default function CalenderPerodLayout(props) {
       }
     }
 
+    /** Applies the recomputed end date/time to the in-progress draft event (mutates it directly in `eventsState.newEvents`). */
     function updateSwipedEvent(pNewData, pEventId) {
       if (initMovedEventData.period.from.date > pNewData.newEndDate.date) {
         return
@@ -211,6 +238,7 @@ export default function CalenderPerodLayout(props) {
       }
     }
 
+    /** Ends the "create by dragging" flow: if a draft was created, opens the add-event dialog on it so the user can fill in the name/details. */
     function handleEndCreateonSwipe() {
       document.removeEventListener("mousemove", handleStartCreateonSwipeListener);
       document.removeEventListener("mouseup", handleEndCreateonSwipe);
@@ -234,10 +262,12 @@ export default function CalenderPerodLayout(props) {
       lastDiffInMin = 0;
     }
   
+    /** Tracks which day column index the mouse is currently over (used by both drag-to-create and drag-to-move). */
     function handleMoveDrageEvent(pIndex) {
       moveOverIndex.current = pIndex;
     }
 
+    /** Confirms the user-chosen date range (from the range-picker inputs) and persists it to `localStorage`. */
     function changeSelectedDateRang() {
       if (inputsValues.from && inputsValues.to) {
         setState(prevState => ({
@@ -249,6 +279,7 @@ export default function CalenderPerodLayout(props) {
       }
     }
 
+    /** Syncs the grid/header wrapper widths to `pDateRange.length` columns, since the grid isn't a native CSS table. */
     function handleLayoutBodyWidth(pDateRange) {
       const gPeriodCalenderHeaderItems = document.querySelectorAll('.period-calender-header-item');
       if (gPeriodCalenderHeaderItems?.length <= 0) {
@@ -262,6 +293,7 @@ export default function CalenderPerodLayout(props) {
       gPNEventsContainerPeriodLayout.current.style.width = width + "px";
     }
 
+    /** Builds the "Programmpunkt" chips for one day column, with overlap-based width/position and multi-day continuation handling. */
     function createEventsChips(pDate, pIndex) {
       let dateEvents = filterByDate(eventList, pDate);
       const chips = [];
@@ -362,6 +394,7 @@ export default function CalenderPerodLayout(props) {
       return chips;
     }
 
+    /** Computes the pixel height/offset of an event's break ("Pause") gap within its chip, for the given day. */
     function calculateBreaks(pBreakData, pDate, peventPeriod, pEventTop) {
       if (!pBreakData) {
         return {
@@ -392,6 +425,7 @@ export default function CalenderPerodLayout(props) {
       }
     }
 
+    /** Builds one empty placeholder column per visible day for the "Veranstaltung" header strip, then fills them via `createVeranstaltungChips`. */
     function renderVeranstaltungen() {
       gPNEventsContainerPeriodLayout.current.style.gridTemplateColumns = `repeat(${gDateRange.length}, 1fr)`;
 
@@ -407,6 +441,11 @@ export default function CalenderPerodLayout(props) {
       createVeranstaltungChips(newChips);
     }
 
+    /**
+     * Fills the "Veranstaltung" header strip built by `renderVeranstaltungen`: first the
+     * events that started before the visible range but continue into it, then the ones
+     * that start within it — each spanning the right number of day columns as one wide chip.
+     */
     function createVeranstaltungChips(pVeranstaltungenChipsContainer) {
       const chips = [];
       let periodEvents = null;
@@ -530,9 +569,15 @@ export default function CalenderPerodLayout(props) {
       });
     }
 
+    /**
+     * @todo Not implemented: intended to block saving an event whose "Darf nicht
+     * überschneiden" (overlapping) attribute is set if it conflicts with another event,
+     * but currently does nothing and isn't called anywhere. The actual overlap check
+     * enforced today lives in `AddEventDialog.getValidationError`.
+     */
     function overLappingPreventerCheck(pEventID) {
       const targetEvent = eventList.filter(event => event.id === pEventID[0]);
-      
+
     }
 
     /*******************************************************************************************/
@@ -543,6 +588,7 @@ export default function CalenderPerodLayout(props) {
      */
     /*******************************************************************************************/
 
+    /** Begins dragging/resizing `pEventId`'s chip on the hourly grid; detects whether a resize handle (top/bottom) was grabbed instead of the body. */
     function onStartMoveEvent(pEvent, pEventId) {
       isMovingEventModeRef.current = true;
 
@@ -571,6 +617,7 @@ export default function CalenderPerodLayout(props) {
       }
     }
 
+    /** Recomputes the dragged/resized event's (and its breaks') new date/time from the mouse movement across columns/minutes, and updates the live tooltip. */
     function handleMoveEvent(pIsBottomExpansion, pIsTopExpansion, pEvent) {
       let currentY  = pEvent.clientY;
       let currentX  = pEvent.clientX;
@@ -594,6 +641,7 @@ export default function CalenderPerodLayout(props) {
       moveToolTipp(currentY, currentX);
     }
 
+    /** Ends the drag/resize: detaches listeners, hides the tooltip, and flags unsaved changes if the movement exceeded the click threshold. */
     function handleMoveEnd(pEvent) {
       gCalenderbodyperiodlayoutWrapper.current.removeEventListener("mousemove", boundHandlers.move);
       gCalenderbodyperiodlayoutWrapper.current.removeEventListener("touchmove", boundHandlers.move);
@@ -621,6 +669,12 @@ export default function CalenderPerodLayout(props) {
       isMovingEventModeRef.current = false;
     }
 
+    /**
+     * Applies the recomputed date/time to the dragged event (and shifts its breaks
+     * along, when moving the whole event rather than resizing one edge) for live
+     * visual feedback. Mutates the event object in place (shared reference with
+     * `eventsState`); only made official once `handleMoveEnd` flags the change as unsaved.
+     */
     function updateMovedEvent(pNewData, pEventId, pIsBottomExpansion, pIsTopExpansion, pBreakNewData) {
       const targetEvent = eventList.filter(item=> item.id == pEventId)[0];
 
@@ -663,6 +717,7 @@ export default function CalenderPerodLayout(props) {
 
     let handleMovePNListener;
 
+    /** Begins dragging a "Veranstaltung" chip from the header strip (day-granularity move only, no resizing). */
     function onStartMovePN(pEvent) {
       const start = moveOverIndex.current;
     
@@ -676,6 +731,7 @@ export default function CalenderPerodLayout(props) {
       initPNPeriod = JSON.parse(JSON.stringify(pEvent.period));
     }
 
+    /** Shifts the dragged "Veranstaltung" by the number of day columns moved over since the drag started. */
     function handleMovePN(start, pEvent) {
       const diffInDay = moveOverIndex.current - start;
       const targetEvent = eventList.filter(item=> item.id == pEvent.id)[0];
@@ -686,12 +742,14 @@ export default function CalenderPerodLayout(props) {
       setEventList([...eventList]);
     }
 
+    /** Ends the "Veranstaltung" drag and detaches its listeners. */
     function handleMovePNEnd() {
       document.querySelectorAll(".m-layout-cell-chip-container").forEach(item => item.style.pointerEvents = "all");
       document.removeEventListener("mousemove", handleMovePNListener);
       document.removeEventListener("mouseup", handleMovePNEnd);
     }
 
+    /** Repositions the live drag tooltip next to the cursor. */
     function moveToolTipp(currentY, currentX) {
       if (toolTip.current) { 
         toolTip.current.style.top  = currentY+15+"px";
@@ -747,6 +805,7 @@ export default function CalenderPerodLayout(props) {
     );
 }
 
+/** Date-range picker shown until the user has chosen a period (hidden once `state.periodDate.from` is set). */
 function SelectRangeSection({ state, inputsValues, setInputsValues, changeSelectedDateRang }) {
   return (
     <div className={`period-layout-select-range-wrapper d-flex flex-col aic ${state.periodDate?.from ? "hide" : ""}`} id="period-layout-select-range-wrapper">
@@ -776,6 +835,7 @@ function SelectRangeSection({ state, inputsValues, setInputsValues, changeSelect
   );
 }
 
+/** Wraps the pre-built day header cells (`calenderHeader`). */
 function CalendarHeaderSection({ calenderHeader }) {
   return (
     <div className="calender-header d-flex aic jcb">
@@ -784,6 +844,7 @@ function CalendarHeaderSection({ calenderHeader }) {
   );
 }
 
+/** The left-hand hour-of-day labels column ("00:00".."23:00"). */
 function TimeList({ hours }) {
   return (
     <div className="timelist" id="timelist">
@@ -798,6 +859,7 @@ function TimeList({ hours }) {
   );
 }
 
+/** The scrollable grid body: the day columns (`layoutBody`) overlaid on the 24 hour rows. */
 function CalendarTableBody({ layoutBody, hours, gCalenderbodyperiodlayoutWrapper }) {
   return (
     <div className="calender-body-day-layout-wrapper hide-scrollbar" ref={gCalenderbodyperiodlayoutWrapper} >
@@ -825,6 +887,7 @@ function CalendarTableBody({ layoutBody, hours, gCalenderbodyperiodlayoutWrapper
   );
 }
 
+/** Assembles the header, "Veranstaltung" strip and hourly grid; hidden until a date range has been chosen. */
 function CalendarBodySection({ state, calenderHeader, layoutBody, hours, gCalenderbodyperiodlayoutWrapper, gPNEventsContainerPeriodLayout, veranstaltungenChipsContainer }) {
   return (
     <div className={`period-layout-wrapper ${state.periodDate?.from ? "" : "hide"}`} id="period-layout-wrapper">

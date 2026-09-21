@@ -1,15 +1,23 @@
 {
   "name": "kalender-tool",
-  "version": "1.0.0",
+  "version": ".0.0",
   "main": "webpack.config.js",
   "scripts": {
     "start": "webpack-dev-server",
     "build": "webpack --mode production"
   },
-  "keywords": [],
+  "keywords": [
+    "calendar",
+    "react",
+    "scheduler",
+    "drag-and-drop",
+    "event-management",
+    "material-ui",
+    "webpack"
+  ],
   "author": "omar shaar",
-  "license": "ISC",
-  "description": "",
+  "license": "MIT",
+  "description": "Browser-based calendar tool built with React, featuring month, day, and custom-period views with drag-and-drop event scheduling and local persistence.",
   "devDependencies": {
     "@babel/core": "^7.26.9",
     "@babel/preset-env": "^7.26.9",

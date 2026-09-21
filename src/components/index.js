@@ -7,8 +7,6 @@ import MyInput from "./global/input/Input";
 import MyText from "./global/text/MyText";
 import MyTitle from "./global/title/MyTitle";
 
-
-
 export {
     CalenderHeader,
     MyButton,

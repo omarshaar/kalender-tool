@@ -1,33 +1,24 @@
-import { Box, setRef } from "@mui/material";
+import { Box } from "@mui/material";
 import MyText from "../global/text/MyText";
 import Icons from "../../assetes/Icons";
-import MyTitle from "../global/title/MyTitle";
 import { useContext, useEffect, useState } from "react";
 import { MyButton } from "../global/button/MyButton";
 import { MainContext } from "../../context";
 import { generateRandomId } from "../../ultis/global";
 import { getCurrentTime, getTodayDate } from "../../ultis/dates";
 import { EventsContext } from "../../context/events";
+import { findOverlappingEvent } from "../../ultis/events-helpers";
 
-export function AddEventDialog(props) {
-    const {isOpen, isNewEvent} = props;
-    const {state, setState} = useContext(MainContext);
-    const {eventsState, setEventsState, changeEventListHandler} = useContext(EventsContext);
-    const [form, setForm] = useState({
+function createEmptyEvent(date = getTodayDate()) {
+    return {
         id: generateRandomId(15),
         name: "",
         title: "",
         type: "event",
         targetEventId: "",
         period: {
-            from: {
-                date: getTodayDate(),
-                time: getCurrentTime(),
-            },
-            to: {
-                date: null,
-                time: null,
-            }
+            from: { date, time: getCurrentTime() },
+            to: { date, time: null }
         },
         breaks: [],
         attributs: {
@@ -36,61 +27,61 @@ export function AddEventDialog(props) {
             begleiter: false,
             teilnehmer: false
         }
-    });
+    };
+}
 
-    useEffect(()=> {
+/**
+ * Modal dialog to create, edit or delete a single calendar event.
+ *
+ * Business context: an event is either a `"event"` ("Veranstaltung" — a top-level
+ * happening, e.g. a conference) or a `"programm"` ("Programmpunkt" — a sub-item that
+ * belongs to a Veranstaltung via `targetEventId`, e.g. a session/workshop). See
+ * `getValidationError` for the rules enforced before a save is allowed.
+ *
+ * Saving never writes to localStorage directly: new events are queued in
+ * `eventsState.newEvents` and edits/deletes are merged into `eventsState.eventsList`
+ * via `changeEventListHandler`. The actual persistence happens later, when the user
+ * explicitly saves all pending changes (see `EventsProvider.saveToLocalHost`).
+ *
+ * @param {Object} props
+ * @param {boolean} props.isOpen - Whether the dialog should be rendered.
+ */
+export function AddEventDialog(props) {
+    const {isOpen} = props;
+    const {state, setState} = useContext(MainContext);
+    const {eventsState, changeEventListHandler} = useContext(EventsContext);
+
+    /** The event currently being edited in the form. Pre-filled from `state.toEditSelectedForm` when editing. */
+    const [form, setForm] = useState(() => createEmptyEvent());
+
+    // Whenever a different event is selected for editing (chip click, drag-created draft, ...),
+    // load its data into the form.
+    useEffect(() => {
+        if (!isOpen) return;
         if (state.toEditSelectedForm) {
             setForm(state.toEditSelectedForm);
+        } else {
+            setForm(createEmptyEvent(state.newEventDate || getTodayDate()));
         }
-    },[state.toEditSelectedForm])
+    }, [isOpen, state.toEditSelectedForm, state.newEventDate]);
 
+    /** Toggles the "Ganztätig" (whole day) flag, which hides the time inputs in the form. */
     function handleFullDay() {
         setForm(prevForm => ({ ...prevForm, attributs: { ...prevForm.attributs, isFullDay: !prevForm.attributs.isFullDay } }));
     }
 
-    function handleChangeBreak_(pValue, pIndex, pKey, pTimeType) {
-        setForm(prevForm => {
-            const newBreaks = [...prevForm.breaks];
-            const breakItem = newBreaks[pIndex];
-            // event data
-            const eventFromDate = prevForm.period.from.date;
-            const eventFromTime = prevForm.period.from.time;
-            const eventToDate   = prevForm.period.to.date;
-            const eventToTime   = prevForm.period.to.time;
-            
-
-            if (pKey == "from") {
-                if (pTimeType == "date") { 
-                    if (eventFromDate <= pValue && eventToDate >= pValue) {
-                        breakItem.from.date = pValue;
-                    } else if (eventFromDate <= pValue && !eventToDate) {
-                        breakItem.from.date = pValue;
-                    }
-                } else {
-                    if (eventFromTime <= pValue && eventToTime >= pValue) {
-                        breakItem.from.time = pValue;
-                    } else if (eventFromTime <= pValue && !eventToTime) {
-                        breakItem.from.time = pValue;
-                    }
-                }
-            } else {
-                if (pTimeType == "date" && !eventToDate) {
-                    breakItem.to.date = pValue;
-                } else {
-
-                }
-
-                if (pTimeType == "time" && !eventToTime) {
-                    breakItem.to.date = pValue;
-                } else {
-                    
-                }
-            }
-    
-            return { ...prevForm, breaks: newBreaks };
-        });
-    }
-
+    /**
+     * Updates one date/time field of a break ("Pause") at `pIndex`, clamping it so the
+     * break always stays inside the event's own period.
+     *
+     * @param {string} pValue - The new date ("YYYY-MM-DD") or time ("HH:MM") value.
+     * @param {number|null} pIndex - Index of the break in `form.breaks`. `null` when
+     *   called from `changeEventPeriod` to re-normalize all breaks (see `isNormalize`).
+     * @param {"from"|"to"} pKey - Which end of the break is being changed.
+     * @param {"date"|"time"} pTimeType - Whether `pValue` is a date or a time.
+     * @param {boolean} [isNormalize] - When true, re-clamps the break's own field against
+     *   `pValue` first (used when the event's period itself just changed).
+     */
     function handleChangeBreak(pValue, pIndex, pKey, pTimeType, isNormalize) {
         setForm(prevForm => {
             const newBreaks = prevForm.breaks.map((breakItem, index) => {
@@ -122,6 +113,11 @@ export function AddEventDialog(props) {
         });
     }
 
+    /**
+     * Returns the later of two "YYYY-MM-DD" date strings or "HH:MM" time strings
+     * (lexicographic comparison, valid because both formats are fixed-width and
+     * zero-padded). Either argument may be empty/null, in which case the other wins.
+     */
     function getBiggerDate(pDate1, pDate2) {
         if (!pDate1) {
             return pDate2
@@ -131,23 +127,25 @@ export function AddEventDialog(props) {
 
         if (pDate1 > pDate2) {
             return pDate1
-        } 
+        }
         return pDate2;
     }
 
+    /** Same contract as {@link getBiggerDate}, but returns the earlier value instead. */
     function getSmallerDate(pDate1, pDate2) {
         if (!pDate1) {
             return pDate2
         }else if (!pDate2) {
             return pDate1
         }
-        
+
         if (pDate1 < pDate2) {
             return pDate1
-        } 
+        }
         return pDate2;
     }
 
+    /** Adds one empty break ("Pause") to the form. Only a single break is supported at a time. */
     function addBreak() {
         setForm(prevForm => {
             if (prevForm.breaks.length > 0) return prevForm;
@@ -155,7 +153,16 @@ export function AddEventDialog(props) {
             return { ...prevForm, breaks: newBreaks };
         });
     }
-    
+
+    /**
+     * Updates one date/time field of the event's own period ("Von"/"Bis"), keeping
+     * `from` <= `to` automatically, then re-clamps any existing break to still fit
+     * inside the (possibly shrunk) period.
+     *
+     * @param {string} pValue - The new date or time value.
+     * @param {"from"|"to"} pKey - Which end of the period is being changed.
+     * @param {"date"|"time"} pTimeType - Whether `pValue` is a date or a time.
+     */
     function changeEventPeriod(pValue, pKey, pTimeType) {
         setForm(prevForm => {
             const updatedPeriod = { ...prevForm.period };
@@ -169,6 +176,7 @@ export function AddEventDialog(props) {
         handleChangeBreak(pValue, null, pKey, pTimeType, true);
     }
 
+    /** Removes the break ("Pause") at `pIndex` from the form. */
     function handleDeleteBreak(pIndex) {
         setForm(prevForm => {
             const newBreaks = prevForm.breaks.filter((_, index) => index !== pIndex);
@@ -176,7 +184,96 @@ export function AddEventDialog(props) {
         });
     }
 
+    /**
+     * Validates the form before it may be saved. Checked in order:
+     * 1. Required fields: name, start date, start time.
+     * 2. If it's a "programm" (Programmpunkt), it must reference a valid, still-active
+     *    "event" (Veranstaltung) via `targetEventId`.
+     * 3. Every complete break ("Pause") must not end before it starts, and must stay
+     *    fully inside the event's own period.
+     *
+     * @param {Object} pForm - The form to validate (same shape as `form`).
+     * @returns {string|null} A user-facing (German) error message, or `null` if valid.
+     */
+    function getValidationError(pForm) {
+        if (!pForm.name) {
+            return "Bitte geben Sie eine Bezeichnung ein.";
+        }
+        if (!pForm.period.from.date) {
+            return "Bitte geben Sie ein Startdatum ein.";
+        }
+        if (!pForm.period.from.time) {
+            return "Bitte geben Sie eine Startzeit ein.";
+        }
+        if (pForm.type === "programm") {
+            const activeEvents = getAllActiveEvents();
+            const targetEvent = activeEvents.find(event => event.id === pForm.targetEventId && event.type === "event");
+            if (!targetEvent) {
+                return "Bitte wählen Sie eine gültige Veranstaltung für diesen Programmpunkt aus.";
+            }
+        }
+
+        if (pForm.breaks && pForm.breaks.length) {
+            const periodFrom = `${pForm.period.from.date}T${pForm.period.from.time}`;
+            const periodTo = pForm.period.to?.date
+                ? `${pForm.period.to.date}T${pForm.period.to.time || pForm.period.from.time}`
+                : null;
+
+            for (const breakItem of pForm.breaks) {
+                if (!breakItem.from.date || !breakItem.from.time || !breakItem.to.date || !breakItem.to.time) {
+                    continue; // incomplete break entry, nothing to validate yet
+                }
+
+                const breakFrom = `${breakItem.from.date}T${breakItem.from.time}`;
+                const breakTo = `${breakItem.to.date}T${breakItem.to.time}`;
+
+                if (breakFrom > breakTo) {
+                    return "Das Ende einer Pause darf nicht vor ihrem Beginn liegen.";
+                }
+                if (breakFrom < periodFrom || (periodTo && breakTo > periodTo)) {
+                    return "Eine Pause liegt außerhalb des Zeitraums des Termins.";
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /** All events (saved + still-pending drafts) that are not soft-deleted. */
+    function getAllActiveEvents() {
+        return [...eventsState.eventsList, ...eventsState.newEvents].filter(event => !event.deleteMarked);
+    }
+
+    /** All active "programm" (Programmpunkt) events whose `targetEventId` points at `pEventId`. */
+    function getLinkedProgrammItems(pEventId) {
+        return getAllActiveEvents().filter(event => event.type === "programm" && event.targetEventId === pEventId);
+    }
+
+    /**
+     * Validates and saves the form, either as:
+     * - a brand new draft (pushed to `eventsState.newEvents`),
+     * - the confirmation of an on-swipe-created draft (moved into `eventsState.eventsList`), or
+     * - an update to an existing event (merged into `eventsState.eventsList`).
+     *
+     * Blocks the save (with a German alert) if required fields are missing, or if
+     * "Darf nicht überschneiden" (overlapping) is enabled and the event's period
+     * conflicts with another active event.
+     */
     function onSaveUpdate() {
+        const validationError = getValidationError(form);
+        if (validationError) {
+            window.alert(validationError);
+            return;
+        }
+
+        if (form.attributs.overlapping) {
+            const conflictingEvent = findOverlappingEvent(form, getAllActiveEvents());
+            if (conflictingEvent) {
+                window.alert(`Speichern nicht möglich: Der Termin überschneidet sich mit "${conflictingEvent.name}".`);
+                return;
+            }
+        }
+
         if (state.toEditSelectedForm) {
             let updatedEventsList = [];
             if (state.toEditSelectedForm.attributs.isNewEvent) { // if edit on-swipe event
@@ -196,18 +293,15 @@ export function AddEventDialog(props) {
                     return eventItem;
                 });
             }
-            
+
             changeEventListHandler({ ...eventsState, eventsList: updatedEventsList });
         } else {
-            if (!(form.name) || !(form.period.from.date) || !(form.period.from.time)) {
-                window.alert("Speichen nicht möglisch");
-            } else {
-                eventsState.newEvents?.push(form);
-                changeEventListHandler({ ...eventsState });
-            }
+            eventsState.newEvents?.push(form);
+            changeEventListHandler({ ...eventsState });
         }
     }
 
+    /** Builds the `<option>` list for the "Veranstaltung" (parent event) select, from all `type === "event"` entries. */
     function createSelectEventOptions() {
         const events  = eventsState.eventsList.filter(event => event.type == "event");
         const options = [];
@@ -221,18 +315,8 @@ export function AddEventDialog(props) {
         )
     }
 
-    function handleDeleteEvent() {
-        const confirm = window.confirm("bist du sicher?");
-        if (!confirm) {
-            setState(prevState => ({
-                ...prevState,
-                openDialogs: {
-                  ...prevState.openDialogs,
-                  addEventDialog: false
-                }
-              }));
-            return
-        }
+    /** Closes the dialog without changing any event data. */
+    function closeDialog() {
         setState(prevState => ({
             ...prevState,
             openDialogs: {
@@ -240,16 +324,63 @@ export function AddEventDialog(props) {
               addEventDialog: false
             }
           }));
+    }
+
+    /**
+     * Soft-deletes the event currently being edited (marks it `deleteMarked: true`;
+     * it is only removed for good on the next `saveToLocalHost`).
+     *
+     * If this is a "Veranstaltung" (event) with linked "Programmpunkte" (programm
+     * events pointing at it via `targetEventId`), deletion is blocked by default:
+     * the user must explicitly confirm a cascade delete of the event and all its
+     * linked items together, otherwise nothing is deleted.
+     */
+    function handleDeleteEvent() {
+        const confirm = window.confirm("bist du sicher?");
+        if (!confirm) {
+            closeDialog();
+            return;
+        }
+
+        const targetId = state.toEditSelectedForm.id;
+        const linkedProgrammItems = form.type === "event" ? getLinkedProgrammItems(targetId) : [];
+
+        let deleteLinkedToo = false;
+        if (linkedProgrammItems.length > 0) {
+            deleteLinkedToo = window.confirm(
+                `Diese Veranstaltung hat ${linkedProgrammItems.length} zugehörige(n) Programmpunkt(e). Möchten Sie die Veranstaltung und alle zugehörigen Programmpunkte löschen?`
+            );
+            if (!deleteLinkedToo) {
+                // user declined the cascade delete -> abort the whole deletion, keep everything as is
+                closeDialog();
+                return;
+            }
+        }
+
+        closeDialog();
         setForm(prevForm => ({ ...prevForm, deleteMarked: true }));
 
+        const linkedIds = new Set(linkedProgrammItems.map(item => item.id));
+
         const updatedEventsList = eventsState.eventsList.map(eventItem => {
-            if (eventItem.id === state.toEditSelectedForm.id) {
+            if (eventItem.id === targetId) {
                 form["deleteMarked"] = true
                 return { ...eventItem, ...form };
             }
+            if (deleteLinkedToo && linkedIds.has(eventItem.id)) {
+                return { ...eventItem, deleteMarked: true };
+            }
             return eventItem;
         });
-        changeEventListHandler({ ...eventsState, eventsList: updatedEventsList });
+
+        const updatedNewEvents = eventsState.newEvents.map(eventItem => {
+            if (deleteLinkedToo && linkedIds.has(eventItem.id)) {
+                return { ...eventItem, deleteMarked: true };
+            }
+            return eventItem;
+        });
+
+        changeEventListHandler({ ...eventsState, eventsList: updatedEventsList, newEvents: updatedNewEvents });
     }
 
     if (!isOpen) {
@@ -258,10 +389,10 @@ export function AddEventDialog(props) {
 
     return (
         <Box className="w-screen h-screen fixed top-0 left-0 z-[9999] flex justify-center items-center" >
-            <Box className="bg-darkWhite bg-opacity-10 absolute top-0 left-0 w-full h-full -z-10 backdrop-blur-[2px]" onClick={() => setState(prevState => ({ ...prevState, openDialogs: { ...prevState.openDialogs, addEventDialog: false } }))}></Box>
+            <Box className="bg-darkWhite bg-opacity-10 absolute top-0 left-0 w-full h-full -z-10 backdrop-blur-[2px]" onClick={closeDialog}></Box>
 
             <Box className="bg-black p-5 rounded-xl w-3/6">
-                <Box className="w-full flex justify-end mb-3"> <Box className="icon-btn w-max" onClick={() => setState(prevState => ({ ...prevState, openDialogs: { ...prevState.openDialogs, addEventDialog: false } }))}> <Icons.close className={"stroke-darkWhite"} /> </Box> </Box>
+                <Box className="w-full flex justify-end mb-3"> <Box className="icon-btn w-max" onClick={closeDialog}> <Icons.close className={"stroke-darkWhite"} /> </Box> </Box>
 
                 <Box className="w-full ">
                     <Box className="w-full flex items-center mb-4">
@@ -386,7 +517,7 @@ export function AddEventDialog(props) {
                         { state.toEditSelectedForm ?
                             <MyButton className={"flex-[0.3] !bg-red-600 !text-white"} onClick={() => handleDeleteEvent()}> <Icons.close size={19} className={"stroke-white me-2"} />  <span>Löschen</span> </MyButton>
                             :
-                            <MyButton className={"flex-1 !bg-red-600 !text-white"} onClick={() => setState(prevState => ({ ...prevState, openDialogs: { ...prevState.openDialogs, addEventDialog: false } }))}> <Icons.close size={19} className={"stroke-white me-2"} />  <span>Schließen</span> </MyButton>
+                            <MyButton className={"flex-1 !bg-red-600 !text-white"} onClick={closeDialog}> <Icons.close size={19} className={"stroke-white me-2"} />  <span>Schließen</span> </MyButton>
                         }
                     </Box>
                 </Box>

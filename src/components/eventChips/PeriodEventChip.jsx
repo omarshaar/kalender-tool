@@ -1,4 +1,12 @@
-import React, { useContext } from 'react';
+/**
+ * @file Chip rendering a "Programmpunkt" event on the period layout's hourly grid,
+ * including its resize handles (top/bottom) and, if it has one, the visual gap for
+ * its break ("Pause"). `type` (a `"<start>-<end>"` key, e.g. `"start-end"`) marks
+ * whether each edge is the event's real start/end or just a continuation across a
+ * day boundary, which controls which handles/corners are shown.
+ */
+
+import { useContext } from 'react';
 import { MainContext } from '../../context';
 
 const PeriodEventChip = ({
@@ -88,6 +96,7 @@ const PeriodEventChip = ({
 
   const showEventHand = !preventResizeEnd && (!type || (type && type.endsWith("-start")));
 
+  /** Opens the add/edit dialog on double-click, loaded with this chip's event. */
   function openEventDialog() {
     setState(prevState => ({
       ...prevState,
@@ -105,8 +114,6 @@ const PeriodEventChip = ({
       id={chipContainerId}
       className={containerClass}
       onMouseDown={(e) => moveEventChipHandler(e, id)}
-      // onDoubleClick={() => handleEditEvent(id)}
-      // onClick={(e) => onMEventChipClick(e, id)}
       style={containerStyle}
     >
       {showTopHand && <div className="event-top-hand"></div>}

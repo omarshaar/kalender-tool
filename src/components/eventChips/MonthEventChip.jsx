@@ -1,11 +1,18 @@
+/**
+ * @file Chip used for multi-day/whole-day events: the month grid's event chips, and
+ * the "Veranstaltung" (event) header strip in the day/period layouts (`isVeranstaltung`).
+ * `type` (a `"<start>-<end>"` key, e.g. `"start-end"`) marks whether each edge is the
+ * event's real start/end or just a continuation across a row/day boundary.
+ */
+
 import { useContext } from "react";
-import { AddEventDialog } from "../dialogs/AddEventDialog";
 import { MainContext } from "../../context";
 
 export default function MonthEventChip({ id, width, color, title, type, onMouseDown, onMouseUp, pEvent, isVeranstaltung, onDoubleClick }) {
   const chipContainerId = `chip-container-${id}`;
   const { state, setState, dateChanger } = useContext(MainContext);
 
+  /** Opens the add/edit dialog on double-click, loaded with this chip's event. */
   function openEventDialog() {
     setState(prevState => ({
       ...prevState,

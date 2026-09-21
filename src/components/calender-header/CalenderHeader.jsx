@@ -1,4 +1,9 @@
-import React from 'react';
+/**
+ * @file Calendar header: date navigation, the save/add-event buttons, the
+ * month/day/period layout switcher, and the settings dropdown (hidden empty days,
+ * focus-on-event range, and the `?vid=` event filter).
+ */
+
 import { Box } from "@mui/material";
 import { useContext, useEffect, useRef, useState } from "react";
 import Icons from "../../assetes/Icons";
@@ -38,6 +43,7 @@ export default function CalenderHeader() {
     dateChanger('date-set', datePicker.current.value);
   }
 
+  /** Switches the active view (month/day/period) and remembers the choice in `localStorage`. */
   function changeLayout(pLayout) {
     setState(prevState => ({
       ...prevState,
@@ -46,6 +52,7 @@ export default function CalenderHeader() {
     localStorage.setItem("layout", pLayout);
   }
 
+  /** Jumps to today: resets the current week for the period layout, or just today's date otherwise. */
   function handleChangeToTodayDate() {
     if (state.selectedLayout == "period-layout") {
       const weekPeriod = getWeekStartAndEnd(getTodayDate());
@@ -64,6 +71,7 @@ export default function CalenderHeader() {
     }
   }
 
+  /** Builds the `<option>` list for the "Veranstaltung" filter select, from all `type === "event"` entries. */
   function createSelectEventOptions() {
     const events  = eventsState.eventsList.filter(event => event.type == "event");
     const options = [];
@@ -75,6 +83,7 @@ export default function CalenderHeader() {
     return options;
   }
 
+  /** Sets/clears the `?vid=` URL param and `state.targetDisplayEventID` when the user picks a "Veranstaltung" to focus on. */
   function onSelectedEventChange(pID) {
     const url = new URL(window.location.href);
 
@@ -95,6 +104,7 @@ export default function CalenderHeader() {
     window.history.replaceState({}, '', url);
   }
 
+  /** Reads the currently selected "Veranstaltung" id from the `?vid=` URL param ("0" = none/"Alle"). */
   function getSelectedIDValueFromULR() {
     let v = new URLSearchParams(location.search).get('vid');
     if (v) {
@@ -104,6 +114,7 @@ export default function CalenderHeader() {
     }
   }
 
+  /** Toggles "hide empty days" (period layout) and persists it to `kalender_user_setting` in `localStorage`. */
   function setLeerTage(pEvent) {
     setState(prevState => ({ ...prevState, hiddenEmptyDays: pEvent.target.checked}));
     
@@ -119,6 +130,7 @@ export default function CalenderHeader() {
     }
   }
 
+  /** Toggles "focus period range on event boundaries" and persists it to `kalender_user_setting` in `localStorage`. */
   function setPeriodOnEventRange(pEvent) {
     if (pEvent) {
       setState(prevState => ({ ...prevState, displayOnEventTimeRange: pEvent.target.checked}));
@@ -138,6 +150,7 @@ export default function CalenderHeader() {
     }
   }
 
+  /** Restores the "hide empty days" / "focus on event range" toggles from `kalender_user_setting` in `localStorage`. */
   function getSetting() {
     const setting = localStorage.getItem("kalender_user_setting");
     if (setting) {
@@ -195,6 +208,7 @@ export default function CalenderHeader() {
   );
 }
 
+/** Prev/next arrows plus a clickable date label (opens a native date picker) — used by the month/day layouts. */
 function DateChanger({ onNext, onPrev, datePicker, openDatePicker, onChangeDatePicker, date }) {
   return (
     <Box className="flex items-center justify-between">
@@ -205,6 +219,7 @@ function DateChanger({ onNext, onPrev, datePicker, openDatePicker, onChangeDateP
   );
 }
 
+/** From/to range controls for the period layout: step by one day (+/-) or pick a date directly. */
 function DateChangerPeriod() {
   const fromInput = useRef(null);
   const toInput = useRef(null);
@@ -224,6 +239,7 @@ function DateChangerPeriod() {
     fromInput.current.showPicker();
   }
 
+  /** Formats `state.periodDate.from/to` for display. */
   function showDatePeriod() {
     setFromDate(convertDateToReadableFormat(state.periodDate.from));
     setToDate(convertDateToReadableFormat(state.periodDate.to));
@@ -252,6 +268,7 @@ function DateChangerPeriod() {
     localStorage.setItem("periodDateTo", pValue);
   }
 
+  /** Extends ("+") or shrinks ("-") the period's `from`/`to` bound by one day. */
   function changeDateRange(pOperation, pType) {
     setState(prevState => {
       let dateValue;

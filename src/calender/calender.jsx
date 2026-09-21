@@ -1,3 +1,9 @@
+/**
+ * @file Root calendar component: renders the header, the add/edit event dialog, and
+ * whichever view is active (month/day/period), lazy-loaded so only the selected
+ * layout's code is ever downloaded.
+ */
+
 import { Box } from "@mui/material";
 import { AddEventDialog, CalenderHeader } from "../components";
 import { MainContext } from "../context";
@@ -10,8 +16,10 @@ const CalenderPerodLayout = lazy(() => import("../calender-layouts/CalenderPerod
 export default function Calender(props) {
     const {state, setState} = useContext(MainContext);
     const  [layout, setLayout] = useState(<></>);
+    // Swap the rendered layout whenever the user switches month/day/period view.
     useEffect(()=> selectLayout(), [state.selectedLayout]);
 
+    /** Picks which layout component to render based on `state.selectedLayout` (falls back to month view). */
     function selectLayout() {
         switch (state.selectedLayout) {
             case 'month-layout':

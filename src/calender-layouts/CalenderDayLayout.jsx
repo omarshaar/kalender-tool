@@ -1,17 +1,28 @@
-import PropTypes, { array } from 'prop-types';
-import { adjustDates, calculateTimeDifferenceInHours, filterByDate, getDayNameAndMonthDay, getTodayDate } from '../ultis/dates';
+/**
+ * @file Day view of the calendar ("day-layout"): a single 24-hour timeline for the
+ * selected date. "Veranstaltung" (event) items are shown in a header strip
+ * (`renderVeranstaltungen`), while "Programmpunkt" (programm) items are placed on
+ * the hourly grid with real start/end time precision (`renderEvents`).
+ *
+ * Dragging a chip's body moves it in time; dragging its top/bottom handle
+ * ("event-top-hand"/"event-hand") resizes its start/end instead (see
+ * `onStartMoveEvent`/`updateMovedEvent`).
+ */
+
+import PropTypes from 'prop-types';
+import { adjustDates, calculateTimeDifferenceInHours, convertMinutesToTime, filterByDate, getDayNameAndMonthDay, getTodayDate } from '../ultis/dates';
 import { MainContext } from '../context';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { EventsContext } from '../context/events';
 import DayEventChip from '../components/eventChips/DayEventChip';
-import { getCSSVariableValue } from '../ultis/global';
+import { generateRandomId, getCSSVariableValue } from '../ultis/global';
 import { filterEventsByPeriod, getEventColor } from '../ultis/events-helpers';
 import { MonthEventChip } from '../components';
 export const gOneHourHeight = getCSSVariableValue("--hour-row-height");
 
 const CalenderDayLayout = () => {
     const {state, setState} = useContext(MainContext);
-    const {eventsState} = useContext(EventsContext);
+    const {eventsState, changeEventListHandler} = useContext(EventsContext);
     const [activeDay, setActiveDay] = useState(null);
     const [date, setDate] = useState(<></>);
     const [eventsContainer, setEventsContainer] = useState([]);
@@ -23,21 +34,32 @@ const CalenderDayLayout = () => {
     let lastDiffInMin      = 0;
     let minuteInterval     = 10;
     const boundHandlers    = useRef({move: null, end: null}).current;
+    // Guards against the mousedown on an existing chip (which bubbles up to the
+    // container) from also being interpreted as the start of a "create by dragging"
+    // gesture; set by onStartMoveEvent while an existing chip is being moved/resized.
+    const isMovingEventModeRef = useRef(false);
+    let intOnSwipeClients   = {x: null, y: null};
+    let eventOnSwipeCreated = false;
+    let handleStartCreateonSwipeListener;
+    let onSwipeEventID;
 
     useEffect(()=> showDay(), [state.selectedDate]);
     useEffect(()=> getTargetEvents(), [eventsState]);
     useEffect(()=> {eventList?.length && renderEvents(); eventList?.length }, [eventList, state.selectedDate]);
 
+    /** Updates the header label and highlights the header if the selected date is today. */
     function showDay() {
         setDate(getDayNameAndMonthDay(state.selectedDate)); // get the day name and month day
         getTodayDate() == state.selectedDate ? setActiveDay(true) : setActiveDay(false); // check if the selected date is today
     }
 
+    /** Re-derives `eventList` (saved events + drafts) from the shared events store. */
     function getTargetEvents() {
         const eventsList = [...eventsState.eventsList, ...eventsState.newEvents];
         setEventList(eventsList);
     }
 
+    /** Builds the "Programmpunkt" chips placed on the hourly grid for the selected date, with overlap-based width/position. */
     function renderEvents() {
         renderVeranstaltungen();
         setEventsContainer([]);
@@ -114,6 +136,7 @@ const CalenderDayLayout = () => {
         });
     }
 
+    /** Computes the pixel height/offset of an event's break ("Pause") gap within its chip, for the given day. */
     function calculateBreaks(pBreakData, pDate, peventPeriod, pEventTop) {
         if (!pBreakData) {
             return {
@@ -144,6 +167,7 @@ const CalenderDayLayout = () => {
         }
     }
 
+    /** Builds the "Veranstaltung" chips shown in the header strip above the hourly grid. */
     function renderVeranstaltungen() {
         const todayVeranstaltungen = filterByDate(eventList, state.selectedDate, true);
 
@@ -178,13 +202,149 @@ const CalenderDayLayout = () => {
 
     /*******************************************************************************************/
     /**
+     * -------------------------
+     * [ Event Creating Logiks ]
+     * -------------------------
+     * Mirrors the period layout's "create by dragging" flow (see
+     * CalenderPerodLayout.createEventOnSwipe and friends), simplified for a single day:
+     * there is no day-column index to track, since every draft is created on
+     * `state.selectedDate`.
+     */
+    /*******************************************************************************************/
+
+    /** Arms the "create by dragging" listeners for a mousedown on the events container. */
+    function createEventOnSwipe(ev) {
+        handleStartCreateonSwipeListener = handleStartCreateonSwipe.bind(null);
+
+        document.addEventListener("mousemove", handleStartCreateonSwipeListener);
+        document.addEventListener("mouseup", handleEndCreateonSwipe);
+
+        intOnSwipeClients.x = ev.clientX;
+        intOnSwipeClients.y = ev.clientY;
+    }
+
+    /**
+     * Once the drag exceeds a small threshold, creates a new draft "Programmpunkt"
+     * (30 min, staged in `eventsState.newEvents` with `attributs.isNewEvent`), then
+     * keeps stretching its end time as the drag continues.
+     */
+    function handleStartCreateonSwipe(event) {
+        const currentY = event.clientY;
+        const columnTop = layoutContainer.current.querySelector(".day-layout-events-container").getBoundingClientRect().top;
+
+        if (currentY - 20 > intOnSwipeClients.y && !isMovingEventModeRef.current) {
+            if (!eventOnSwipeCreated) {
+                // create Event
+                onSwipeEventID = generateRandomId(15);
+
+                setState(prevState => ({
+                    ...prevState,
+                    onSwipeEventID: onSwipeEventID
+                }))
+
+                const NewEvent = {
+                    id: onSwipeEventID,
+                    name: "unbenannt",
+                    title: "",
+                    type: "programm",
+                    targetEventId: "",
+                    period: {
+                        from: {
+                            date: state.selectedDate,
+                            time: convertMinutesToTime(Math.round(parseInt(intOnSwipeClients.y - columnTop) / 10) * 10),
+                        },
+                        to: {
+                            date: state.selectedDate,
+                            time: convertMinutesToTime((Math.round(parseInt(intOnSwipeClients.y - columnTop) / 10) * 10) + 30),
+                        }
+                    },
+                    breaks: [],
+                    attributs: {
+                        isFullDay: false,
+                        overlapping: false,
+                        begleiter: false,
+                        teilnehmer: false,
+                        isNewEvent: true
+                    }
+                }
+
+                eventsState.newEvents?.push(NewEvent);
+                changeEventListHandler({ ...eventsState });
+                initMovedEventData = JSON.parse(JSON.stringify(NewEvent));
+            }
+
+            eventOnSwipeCreated = true;
+        }
+
+        if (eventOnSwipeCreated) {
+            handleMoveSwipEvent(event);
+        }
+    }
+
+    /** Recomputes the draft event's end time from how far the drag has moved. */
+    function handleMoveSwipEvent(pEvent) {
+        let currentY = pEvent.clientY;
+        let diffInMin = currentY - intOnSwipeClients.y;
+
+        // round time
+        diffInMin = Math.round(diffInMin / minuteInterval) * minuteInterval - 30;
+
+        if (Math.abs(diffInMin - lastDiffInMin) >= minuteInterval) {
+            const period = initMovedEventData.period;
+            const newData = adjustDates(period.from.date, period.from.time, period.to.date, period.to.time, diffInMin);
+            updateSwipedEvent(newData, initMovedEventData.id);
+            lastDiffInMin = diffInMin;
+        }
+    }
+
+    /** Applies the recomputed end time to the in-progress draft event (mutates it directly in `eventsState.newEvents`). */
+    function updateSwipedEvent(pNewData, pEventId) {
+        if (initMovedEventData.period.from.date > pNewData.newEndDate.date) {
+            return
+        }
+        const targetEvent = eventsState.newEvents.filter(item => item.id == pEventId)[0];
+        if ((initMovedEventData.period.from.time < pNewData.newEndDate.time) || initMovedEventData.period.from.date != pNewData.newEndDate.date) {
+            targetEvent.period.to.time = pNewData.newEndDate.time;
+            targetEvent.period.to.date = pNewData.newEndDate.date;
+            changeEventListHandler({ ...eventsState });
+        }
+    }
+
+    /** Ends the "create by dragging" flow: if a draft was created, opens the add-event dialog on it so the user can fill in the name/details. */
+    function handleEndCreateonSwipe() {
+        document.removeEventListener("mousemove", handleStartCreateonSwipeListener);
+        document.removeEventListener("mouseup", handleEndCreateonSwipe);
+
+        const targetEvent = eventsState.newEvents.filter(item => item.id == onSwipeEventID)[0];
+
+        if (eventOnSwipeCreated) {
+            setState(prevState => ({
+                ...prevState,
+                toEditSelectedForm: targetEvent,
+                openDialogs: {
+                    ...prevState.openDialogs,
+                    addEventDialog: true
+                }
+            }));
+        }
+
+        initMovedEventData = null;
+        eventOnSwipeCreated = false;
+        lastDiffInMin = 0;
+    }
+
+    /*******************************************************************************************/
+    /**
      * -----------------------
      * [ Event Moving Logiks ]
      * -----------------------
      */
     /*******************************************************************************************/
 
+    /** Begins dragging/resizing `pEventId`'s chip; detects whether a resize handle (top/bottom) was grabbed instead of the body. */
     function onStartMoveEvent(pEvent, pEventId) {
+        isMovingEventModeRef.current = true;
+
         initCoords.x = pEvent.clientX;
         initCoords.y = pEvent.clientY;
         const isBottomExpansion = Array.from(pEvent.target.classList).includes("event-hand");
@@ -210,6 +370,7 @@ const CalenderDayLayout = () => {
         }
     }
 
+    /** Recomputes the dragged/resized event's new start/end from the mouse's vertical movement, snapped to `minuteInterval`. */
     function handleMoveEvent(pIsBottomExpansion, pIsTopExpansion, pEvent) {
         let currentY = pEvent.clientY;
         let diffInMin = currentY - initCoords.y;
@@ -224,6 +385,7 @@ const CalenderDayLayout = () => {
         }
     }
 
+    /** Ends the drag/resize: detaches the listeners and flags unsaved changes if the movement exceeded the click threshold. */
     function handleMoveEnd(event) {
         layoutContainer.current.removeEventListener("mousemove", boundHandlers.move);
         layoutContainer.current.removeEventListener("touchmove", boundHandlers.move);
@@ -247,9 +409,15 @@ const CalenderDayLayout = () => {
 
         initCoords.x = 0;
         initCoords.y = 0;
-        
+        isMovingEventModeRef.current = false;
     }
 
+    /**
+     * Applies the recomputed date/time to the dragged event for live visual feedback
+     * (moves it if neither handle was grabbed, otherwise resizes only the grabbed end).
+     * Mutates the event object in place (shared reference with `eventsState`); only
+     * made official once `handleMoveEnd` flags the change as unsaved.
+     */
     function updateMovedEvent(pNewData, pEventId, pIsBottomExpansion, pIsTopExpansion) {
         const targetEvent = eventList.filter(item=> item.id == pEventId)[0];
 
@@ -271,10 +439,6 @@ const CalenderDayLayout = () => {
         setEventList([...eventList]);
     }
 
-    // useEffect(()=> {
-    //     console.log(eventsContainer);
-    // }, [eventsContainer]);
-
     return (
         <div className="calender-day-layout layouts" id="calender-day-layout">
             <div className="calender-header">
@@ -291,7 +455,7 @@ const CalenderDayLayout = () => {
                 <div className="time-line" id="time-line"></div>
 
                 <div className="calender-body">
-                    <div className="day-layout-events-container" id="day-layout-events-container">
+                    <div className="day-layout-events-container" id="day-layout-events-container" onMouseDown={createEventOnSwipe}>
                         {/* Add event handler in React way */}
                         {eventsContainer}
                     </div>

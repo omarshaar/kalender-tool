@@ -176,10 +176,13 @@ export function changeDateByDays(pDateStr, pDays) {
  * @returns {string} The new date string in the format "YYYY-MM-DD" after adding/subtracting the specified number of months.
  */
 export function changeDateByMonths(pDateStr, pMonths) {
-    let date = new Date(pDateStr);
+    const parts = pDateStr.split('-');
+    const date = new Date(parts[0], parts[1] - 1, parts[2]);
     date.setMonth(date.getMonth() + pMonths);
-    let newDateStr = date.toISOString().split('T')[0];
-    return newDateStr;
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
 }
 
 /**
@@ -438,8 +441,8 @@ export function isDateMonthBetween(targetDate, date1, date2) {
     
     let startDate = d1 < d2 ? d1 : d2;
     let endDate = d1 > d2 ? d1 : d2;
-    
-    return target > startDate && target < endDate;
+
+    return target >= startDate && target <= endDate;
 }
 
 /**
@@ -679,17 +682,23 @@ export function calculateEmptyDays(events) {
  *                             The week starts on Monday and ends on Sunday.
  */
 export function getWeekStartAndEnd(pDateString) {
-    const date = new Date(pDateString);
+    const parts = pDateString.split('-');
+    const date = new Date(parts[0], parts[1] - 1, parts[2]);
 
     const day = date.getDay();
-    const diffToMonday = (day === 0 ? -6 : 1) - day; 
+    const diffToMonday = (day === 0 ? -6 : 1) - day;
     const monday = new Date(date);
     monday.setDate(date.getDate() + diffToMonday);
 
     const sunday = new Date(monday);
     sunday.setDate(monday.getDate() + 6);
 
-    const formatDate = (d) => d.toISOString().split('T')[0];
+    const formatDate = (d) => {
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    };
 
     return {
         start: formatDate(monday),

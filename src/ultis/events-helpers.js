@@ -1,3 +1,13 @@
+/**
+ * @file Event-list utilities shared across layouts: filtering by month/period,
+ * detecting overlaps, sorting, and picking a display color for a chip.
+ */
+
+/**
+ * Events relevant to the month grid shown for `pDateString`: those inside the month
+ * itself, plus any bleeding in from the last week of the previous month or the first
+ * week of the next month (the grid's leading/trailing cells).
+ */
 export function filterEventsByMonth(pEvents, pDateString) {
     const [year, month] = pDateString.split("-").map(Number);
 
@@ -25,30 +35,12 @@ export function filterEventsByMonth(pEvents, pDateString) {
     });
 }
 
-export function filterEventsByPeriod_(pEvents, pRefEvent) {
-    const pFromDateTime = new Date(`${pRefEvent.period.from.date}T${pRefEvent.period.from.time}`);
-    const pToDate = pRefEvent.period.to && pRefEvent.period.to.date ? pRefEvent.period.to.date : pRefEvent.period.from.date;
-    const pToTime = pRefEvent.period.to && pRefEvent.period.to.time ? pRefEvent.period.to.time : (() => {
-      const dt = new Date(`${pRefEvent.period.from.date}T${pRefEvent.period.from.time}`);
-      dt.setMinutes(dt.getMinutes() + 30);
-      return dt.toTimeString().slice(0, 5);
-    })();
-    const pToDateTime = new Date(`${pToDate}T${pToTime}`);
-    return pEvents.filter(pEvent => {
-      if (pEvent.id === pRefEvent.id) return false;
-      if (pEvent.type !== pRefEvent.type) return false;
-      const pEventFrom = new Date(`${pEvent.period.from.date}T${pEvent.period.from.time}`);
-      const pEventToDate = pEvent.period.to && pEvent.period.to.date ? pEvent.period.to.date : pEvent.period.from.date;
-      const pEventToTime = pEvent.period.to && pEvent.period.to.time ? pEvent.period.to.time : (() => {
-        const dt = new Date(`${pEvent.period.from.date}T${pEvent.period.from.time}`);
-        dt.setMinutes(dt.getMinutes() + 30);
-        return dt.toTimeString().slice(0, 5);
-      })();
-      const pEventTo = new Date(`${pEventToDate}T${pEventToTime}`);
-      return pEventFrom <= pToDateTime && pFromDateTime <= pEventTo;
-    });
-}
-
+/**
+ * Every event of the same type that directly or transitively overlaps `pRefEvent` in
+ * time (a chain: if A overlaps B and B overlaps C, all three are returned even if A
+ * and C don't directly overlap). Used to size/position side-by-side overlapping chips
+ * in the day/period layouts. An event with no `period.to` is treated as 30 minutes long.
+ */
 export function filterEventsByPeriod(pEvents, pRefEvent) {
   function getPeriod(pEvent) {
     const pFromDateTime = new Date(`${pEvent.period.from.date}T${pEvent.period.from.time}`);
@@ -82,6 +74,12 @@ export function filterEventsByPeriod(pEvents, pRefEvent) {
   return pResult;
 }
 
+/**
+ * Sorts events by start time ascending, then (for ties) by end time descending, so a
+ * longer event beginning at the same time as a shorter one is listed first.
+ *
+ * Note: sorts `pEvents` in place (`Array.prototype.sort`) and returns the same array.
+ */
 export function sortEventsByStartAscAndEndDesc(pEvents) {
   pEvents.sort((a, b) => {
     const startA = new Date(`${a.period.from.date}T${a.period.from.time}`);
@@ -97,6 +95,49 @@ export function sortEventsByStartAscAndEndDesc(pEvents) {
   return pEvents;
 }
 
+/**
+ * Normalizes an event's period into a pair of sortable/comparable `"YYYY-MM-DDTHH:MM"`
+ * strings, honoring `attributs.isFullDay` (00:00-23:59) and falling back to the start
+ * date/time when `period.to` is missing.
+ */
+export function getEventTimeRange(pEvent) {
+  const fromDate = pEvent.period.from.date;
+  const fromTime = pEvent.attributs?.isFullDay ? "00:00" : (pEvent.period.from.time || "00:00");
+  const toDate = pEvent.period.to?.date || fromDate;
+  const toTime = pEvent.attributs?.isFullDay
+    ? "23:59"
+    : (pEvent.period.to?.time || fromTime);
+
+  return {
+    from: `${fromDate}T${fromTime}`,
+    to: `${toDate}T${toTime}`
+  };
+}
+
+/**
+ * Finds the first event in `pEvents` (excluding soft-deleted ones and `pRefEvent`
+ * itself) whose time range overlaps `pRefEvent`'s. Used to enforce "Darf nicht
+ * überschneiden" (must not overlap) when saving an event (see `AddEventDialog`).
+ *
+ * @returns {Object|null} The conflicting event, or `null` if there is none.
+ */
+export function findOverlappingEvent(pRefEvent, pEvents) {
+  const refRange = getEventTimeRange(pRefEvent);
+
+  return pEvents.find(event => {
+    if (event.id === pRefEvent.id) return false;
+    if (event.deleteMarked) return false;
+
+    const range = getEventTimeRange(event);
+    return refRange.from <= range.to && range.from <= refRange.to;
+  }) || null;
+}
+
+/**
+ * Picks the chip color for an event, in priority order: soft-deleted (warning red) >
+ * still-unsaved draft (`isNewEvent`, white) > "Veranstaltung" (event, green) >
+ * "Programmpunkt" audience (`begleiter`/`teilnehmer`/both/neither).
+ */
 export function getEventColor(pEvent) {
   let color = "#4E749D";
   const colors = {

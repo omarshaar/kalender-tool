@@ -1,4 +1,12 @@
-import React, { useContext } from "react";
+/**
+ * @file Chip rendering a "Programmpunkt" event on the day layout's hourly grid,
+ * including its resize handles (top/bottom) and, if it has one, the visual gap for
+ * its break ("Pause"). `type` (a `"<start>-<end>"` key, e.g. `"start-end"`) marks
+ * whether each edge is the event's real start/end or just a continuation across a
+ * day boundary, which controls which handles/corners are shown.
+ */
+
+import { useContext } from "react";
 import Icons from "../../assetes/Icons";
 import { MainContext } from "../../context";
 
@@ -26,12 +34,16 @@ const DayEventChip = ({
     }
   };
 
+  // `openEventModal` is not defined anywhere in this component, so this handler is
+  // currently a no-op; the actual double-click-to-edit behavior is `openEventDialog`
+  // below, wired to the outer wrapper's `onDoubleClick`.
   const handleDoubleClick = (e) => {
     if (typeof openEventModal === "function") {
       openEventModal(id, e);
     }
   };
 
+  /** Opens the add/edit dialog on double-click, loaded with this chip's event. */
   function openEventDialog() {
     setState(prevState => ({
       ...prevState,
